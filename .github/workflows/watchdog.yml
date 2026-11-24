@@ -1,0 +1,71 @@
+name: Colab Watchdog Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      accelerator:
+        description: GPU accelerator
+        required: false
+        default: L4
+        type: choice
+        options:
+          - L4
+          - A100
+          - G4
+          - T4
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: colab-watchdog-runner
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Check secrets configured
+        id: cfg
+        env:
+          HAS_ADC: ${{ secrets.GOOGLE_ADC_JSON != '' }}
+          HAS_TOK: ${{ secrets.STORAGE_GH_TOKEN != '' }}
+          HAS_REPO: ${{ secrets.STORAGE_REPO != '' }}
+          HAS_PROJ: ${{ secrets.COLAB_QUOTA_PROJECT != '' }}
+        run: |
+          if [ "$HAS_ADC" = "true" ] && [ "$HAS_TOK" = "true" ] && [ "$HAS_REPO" = "true" ] && [ "$HAS_PROJ" = "true" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Required secrets not configured yet; exiting cleanly."
+          fi
+      - name: Checkout private runner
+        if: steps.cfg.outputs.ready == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.STORAGE_REPO }}
+          token: ${{ secrets.STORAGE_GH_TOKEN }}
+          path: private_runner
+          persist-credentials: false
+      - name: Setup Python
+        if: steps.cfg.outputs.ready == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run watchdog
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          GOOGLE_ADC_JSON: ${{ secrets.GOOGLE_ADC_JSON }}
+          COLAB_QUOTA_PROJECT: ${{ secrets.COLAB_QUOTA_PROJECT }}
+          STORAGE_GH_TOKEN: ${{ secrets.STORAGE_GH_TOKEN }}
+          STORAGE_REPO: ${{ secrets.STORAGE_REPO }}
+        run: |
+          python3 -u private_runner/watchdog.py --run \
+            --storage github \
+            --github-repo "$STORAGE_REPO" \
+            --quiet-logs \
+            --accelerator "${{ inputs.accelerator || 'L4' }}" \
+            --max-minutes 300 \
+            --poll-seconds 300
