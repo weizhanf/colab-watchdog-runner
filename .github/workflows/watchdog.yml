@@ -25,7 +25,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 350
     steps:
       - name: Check secrets configured
         id: cfg
@@ -68,5 +68,6 @@ jobs:
             --quiet-logs \
             --release-on-timeout \
             --accelerator "${{ inputs.accelerator || 'L4' }}" \
-            --max-minutes 300 \
+            --target-train-seconds 43195 \
+            --max-minutes 315 \
             --poll-seconds 300
